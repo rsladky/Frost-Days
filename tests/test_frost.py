@@ -12,7 +12,6 @@ from frost_days.frost import (
     is_frost,
     missing_ratio,
 )
-from frost_days.stations import haversine
 
 
 def make_tn(dates, values) -> pd.Series:
@@ -89,24 +88,3 @@ def test_per_day_of_year_missing_year_excluded_from_denominator():
     assert out.loc["01-15", "n_annees_observees"] == 2
     assert out.loc["01-15", "count_gel"] == 2
     assert out.loc["01-15", "freq_relative"] == pytest.approx(1.0)
-
-
-# --- haversine -----------------------------------------------------------------
-
-def test_haversine_known_distance():
-    # Paris (Notre-Dame) -> Lyon : ~392 km
-    d = haversine(48.853, 2.349, 45.764, 4.835)
-    assert d == pytest.approx(392, abs=5)
-
-
-def test_haversine_zero():
-    assert haversine(48.0, 2.0, 48.0, 2.0) == pytest.approx(0.0, abs=1e-6)
-
-
-def test_haversine_vectorized():
-    lats = np.array([48.0, 45.764])
-    lons = np.array([2.0, 4.835])
-    d = haversine(48.0, 2.0, lats, lons)
-    assert d.shape == (2,)
-    assert d[0] == pytest.approx(0.0, abs=1e-6)
-    assert d[1] > 100

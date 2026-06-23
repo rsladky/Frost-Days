@@ -115,11 +115,29 @@ Cinq niveaux de vérification, du plus automatique au plus convaincant à l'oral
 ```bash
 uv run pytest -q
 ```
-Attendu : **11 passed**. Ces tests vérifient la logique pure, sans réseau :
+Attendu : **26 passed**. Ces tests vérifient la logique pure, sans réseau, et se
+répartissent en deux fichiers :
+
+**`tests/test_frost.py` (8 tests) — le cœur métier :**
 - le seuil de gel (`0.0` gèle, `0.1` non, `NaN` non) ;
-- le calcul du taux de valeurs manquantes ;
+- le calcul du taux de valeurs manquantes (NaN comptés comme manquants) ;
 - la fréquence relative par jour et **l'exclusion du 29 février** ;
-- la distance Haversine sur des distances connues (Paris→Lyon ≈ 392 km).
+- l'exclusion des années sans donnée du dénominateur de la fréquence.
+
+**`tests/test_stations.py` (18 tests) — les algorithmes Haversine & KDTree :**
+- **Haversine, exactitude** : distances réelles connues (Paris→Lyon ≈ 392 km,
+  Paris→Marseille ≈ 661 km, Paris→Londres ≈ 343 km), **symétrie** `d(A,B)=d(B,A)`,
+  distance nulle sur un même point, **version vectorisée** = appels scalaires,
+  borne physique (antipodes ≈ 20 015 km).
+- **Classement Haversine** : ordre conforme aux distances, colonne `distance_km`
+  triée croissante, station la plus proche correctement identifiée.
+- **KDTree vs Haversine** : même station la plus proche, même ordre complet sur un
+  jeu sans ambiguïté, même ensemble de stations renvoyé, et `distance_km` identique
+  par station entre les deux méthodes.
+- **Pourquoi Haversine par défaut** (2 tests, voir §5 bis) : sur une quasi-égalité,
+  Haversine choisit la station réellement la plus proche, là où KDTree (euclidien en
+  degrés) peut se tromper.
+- **Cas limites** : DataFrame vide, une seule station.
 
 ### Niveau 2 — Exécution réelle (résultats plausibles)
 ```bash
@@ -165,6 +183,40 @@ Le notebook vérifie :
 ### Niveau 5 — Exports de vérification du professeur
 Quand les **exports partiels** (2013-2023) seront fournis, la **section 5** du notebook est
 prête : on charge le fichier attendu et on compare commune par commune le total calculé.
+
+---
+
+## 5 bis. Haversine vs KDTree : le test qui marque des points 🎯
+
+Deux tests de `tests/test_stations.py` démontrent **pourquoi l'énoncé recommande Haversine**.
+
+On prend deux stations à distance quasi égale de Paris, mais dans des **directions
+différentes** :
+- **Le Bourget** (48.9694, 2.4414) — plein **nord** ;
+- **Orly** (48.7233, 2.3794) — plein **est**.
+
+Or **un degré de longitude est plus court qu'un degré de latitude** (facteur
+≈ cos(latitude) ≈ 0,66 à Paris). Conséquence :
+
+| Méthode | Distance utilisée | Station classée 1re | Correct ? |
+|---------|-------------------|---------------------|-----------|
+| **Haversine** | vraie distance sphérique (km) | **Le Bourget** (~14,1 km) | ✅ oui |
+| **KDTree** | euclidienne sur degrés bruts | **Orly** (~0,136 en degrés) | ❌ non |
+
+- `test_haversine_picks_truly_closest_on_near_tie` prouve que Haversine retient bien
+  Le Bourget, et vérifie au passage que `d(Bourget) < d(Orly)`.
+- `test_kdtree_can_diverge_from_haversine_on_near_tie` **documente** la limite de
+  KDTree : il place Orly en premier, à tort.
+
+À dire à l'oral : *« KDTree reste utile comme pré-tri très rapide, mais sur les
+quasi-égalités il peut se tromper car il ignore la courbure et l'anisotropie des
+degrés. C'est pourquoi le calcul final et le classement par défaut utilisent
+Haversine. »*
+
+Pour l'illustrer en direct :
+```bash
+uv run pytest tests/test_stations.py -k near_tie -v
+```
 
 ---
 
