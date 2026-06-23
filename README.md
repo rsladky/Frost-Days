@@ -5,7 +5,12 @@ dates, à partir des données climatologiques quotidiennes de Météo-France
 (open data, [data.gouv.fr](https://www.data.gouv.fr/datasets/donnees-climatologiques-de-base-quotidiennes)).
 
 Un **jour de gel** est défini comme un jour où la température minimale (`TN`) a été
-inférieure ou égale à **0 °C**.
+**strictement inférieure à 0 °C** (`TN < 0`).
+
+> Note : l'énoncé écrit « inférieure ou égale à 0 °C », mais les **données de
+> validation** fournies comptent un gel uniquement quand `TN < 0` (un jour à
+> exactement 0,0 °C n'est pas un gel). Le code s'aligne sur les données de
+> validation — voir la section *Validation* ci-dessous.
 
 ## Fonctionnalités
 
@@ -70,6 +75,30 @@ uv run streamlit run app/streamlit_app.py
 ```bash
 uv run pytest
 ```
+
+### Validation contre les données de référence
+
+Des exports de référence (station retenue + `frost_day` quotidien pour 6 communes,
+plus un référentiel de communes/stations) sont fournis dans `validation.zip`.
+Après extraction dans `data/validation/`, on compare le pipeline à ces données :
+
+```bash
+uv run python scripts/validate.py
+```
+
+Résultat : **les 6 communes passent les 4 contrôles** (sélection de station,
+valeurs `TN`, définition du gel, total de jours de gel). Les valeurs `TN` chargées
+sont **strictement identiques** à la référence (écart max 0,000 °C), y compris pour
+les communes dont la station la plus proche est dans un **département voisin**
+(Asnières-sur-Saône/01 → 71, Espinchal/63 → 15, Montfalcon/38 → 26).
+
+## Choix de station inter-départements
+
+La station la plus proche n'est pas forcément dans le département saisi : une
+commune en bordure peut avoir une station plus proche de l'autre côté de la
+frontière départementale. Le code détermine donc les **départements candidats**
+(le département de la commune + ceux ayant une commune dans un rayon de 40 km) et
+choisit la station la plus proche parmi tous ces départements.
 
 ## Données
 

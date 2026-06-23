@@ -9,12 +9,19 @@ PERIOD_START = "2014-01-01"
 PERIOD_END = "2023-12-31"
 
 # --- Règles métier ---
-# Jour de gel : température minimale TN <= 0 °C.
+# Jour de gel : température minimale TN strictement inférieure à 0 °C (TN < 0).
+# NB : l'énoncé écrit « inférieure ou égale à 0 °C », mais les données de
+# validation fournies comptent un gel uniquement quand TN < 0 (un jour à
+# exactement 0,0 °C n'est PAS un gel). On s'aligne sur les données de validation.
 FROST_THRESHOLD = 0.0
 # Une station avec plus de 35 % de valeurs manquantes sur la période n'est pas utilisée.
 MAX_MISSING_RATIO = 0.35
 # Nombre maximum de stations candidates inspectées (par distance croissante).
 MAX_CANDIDATE_STATIONS = 15
+# Rayon (km) de recherche des départements candidats autour d'une commune :
+# permet de retenir une station d'un département voisin si elle est plus proche
+# (cas des communes en bordure de département).
+NEIGHBOR_RADIUS_KM = 40.0
 
 # --- Colonnes utiles dans les fichiers Météo-France QUOT RR-T-Vent ---
 CSV_SEP = ";"

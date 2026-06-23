@@ -22,17 +22,59 @@ def haversine(lat1: float, lon1: float, lat2, lon2):
 
 
 def list_stations(departement: str | int) -> pd.DataFrame:
-    """Stations uniques du département : NUM_POSTE, NOM_USUEL, LAT, LON.
+    """Stations uniques du département : NUM_POSTE, NOM_USUEL, LAT, LON, _dept.
 
-    On ne garde que les stations dont les coordonnées sont renseignées."""
-    df = load_department_tn(departement)
+    On ne garde que les stations dont les coordonnées sont renseignées. La colonne
+    ``_dept`` mémorise le département d'origine (utile quand on combine plusieurs
+    départements : elle indique dans quel fichier lire la série TN de la station)."""
+    from frost_days.weather import normalize_dept
+
+    dept = normalize_dept(departement)
+    df = load_department_tn(dept)
     stations = (
         df[[config.COL_STATION, config.COL_NAME, config.COL_LAT, config.COL_LON]]
         .dropna(subset=[config.COL_LAT, config.COL_LON])
         .drop_duplicates(subset=[config.COL_STATION])
         .reset_index(drop=True)
     )
+    stations["_dept"] = dept
     return stations
+
+
+def candidate_departments(
+    lat: float, lon: float, radius_km: float = config.NEIGHBOR_RADIUS_KM
+) -> list[str]:
+    """Départements à explorer autour d'une commune (approche pilotée par les données).
+
+    On retient tout département possédant au moins une commune dans ``radius_km``
+    autour du point : le département de la commune et, pour les communes en bordure,
+    les départements voisins — afin de ne pas rater une station limitrophe plus proche.
+    """
+    from frost_days.communes import load_communes  # import différé (évite un cycle)
+
+    communes = load_communes()
+    dist = haversine(
+        lat,
+        lon,
+        communes[config.COM_LAT].to_numpy(),
+        communes[config.COM_LON].to_numpy(),
+    )
+    near = communes.loc[dist <= radius_km, config.COM_DEPT]
+    return sorted(d for d in near.dropna().unique())
+
+
+def list_stations_multi(departements) -> pd.DataFrame:
+    """Stations uniques sur plusieurs départements (concaténation, sans doublon)."""
+    frames = [list_stations(d) for d in departements]
+    if not frames:
+        return pd.DataFrame(
+            columns=[config.COL_STATION, config.COL_NAME, config.COL_LAT, config.COL_LON, "_dept"]
+        )
+    return (
+        pd.concat(frames, ignore_index=True)
+        .drop_duplicates(subset=[config.COL_STATION])
+        .reset_index(drop=True)
+    )
 
 
 def rank_by_distance(

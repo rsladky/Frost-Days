@@ -7,7 +7,11 @@ from dataclasses import dataclass
 import pandas as pd
 
 from frost_days import config
-from frost_days.stations import list_stations, rank_by_distance
+from frost_days.stations import (
+    candidate_departments,
+    list_stations_multi,
+    rank_by_distance,
+)
 from frost_days.weather import load_station_tn, normalize_dept
 
 
@@ -34,8 +38,8 @@ class FrostStats:
 
 
 def is_frost(tn: pd.Series) -> pd.Series:
-    """Masque booléen des jours de gel (TN <= 0). Les NaN comptent comme False."""
-    return tn <= config.FROST_THRESHOLD
+    """Masque booléen des jours de gel (TN < 0). Les NaN comptent comme False."""
+    return tn < config.FROST_THRESHOLD
 
 
 def missing_ratio(tn: pd.Series, start: pd.Timestamp, end: pd.Timestamp) -> float:
@@ -57,14 +61,18 @@ def select_station(
 ) -> tuple[pd.Series, dict]:
     """Retourne (série TN de la station retenue, infos station).
 
-    Parcourt les stations par distance croissante et retient la première dont le
-    taux de valeurs manquantes est ≤ ``MAX_MISSING_RATIO``."""
-    dept = normalize_dept(departement)
-    stations = rank_by_distance(list_stations(dept), lat, lon, method=method)
+    Recherche les stations dans le département de la commune ET les départements
+    voisins proches (une station limitrophe peut être plus proche), les classe par
+    distance croissante, et retient la première dont le taux de valeurs manquantes
+    est ≤ ``MAX_MISSING_RATIO``."""
+    depts = candidate_departments(lat, lon)
+    if normalize_dept(departement) not in depts:
+        depts.append(normalize_dept(departement))
+    stations = rank_by_distance(list_stations_multi(depts), lat, lon, method=method)
 
     best_partial = None  # meilleure station vue, même si trop incomplète
     for _, st in stations.head(config.MAX_CANDIDATE_STATIONS).iterrows():
-        tn = load_station_tn(dept, st[config.COL_STATION], start, end)
+        tn = load_station_tn(st["_dept"], st[config.COL_STATION], start, end)
         ratio = missing_ratio(tn, start, end)
         info = {
             "station_id": str(st[config.COL_STATION]),
@@ -99,7 +107,7 @@ def _per_day_of_year(tn: pd.Series) -> pd.DataFrame:
     df["mmdd"] = df.index.strftime("%m-%d")
     df["year"] = df.index.year
     df = df[df["mmdd"] != "02-29"]            # 29 février non pertinent
-    df["frost"] = df["tn"] <= config.FROST_THRESHOLD
+    df["frost"] = df["tn"] < config.FROST_THRESHOLD
     df["observed"] = df["tn"].notna()
 
     grouped = df.groupby("mmdd")

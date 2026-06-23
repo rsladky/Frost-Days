@@ -22,7 +22,7 @@ st.set_page_config(page_title="Frost-Days ❄️", page_icon="❄️", layout="w
 st.title("❄️ Frost-Days — Jours de gel par commune")
 st.caption(
     "Données : Météo-France (climatologie quotidienne, data.gouv.fr). "
-    "Un jour de gel = température minimale TN ≤ 0 °C."
+    "Un jour de gel = température minimale TN < 0 °C."
 )
 
 

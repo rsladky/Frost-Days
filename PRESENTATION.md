@@ -7,7 +7,7 @@ Document destiné à **présenter le projet à l'oral** et à **prouver que le c
 ## 1. Le problème en une phrase
 
 > À partir des données météo open data de Météo-France, compter les **jours de gel**
-> (jour où la température minimale `TN ≤ 0 °C`) pour une **commune**, un **département**
+> (jour où la température minimale `TN < 0 °C`) pour une **commune**, un **département**
 > et une **plage de dates**, et en sortir des statistiques.
 
 Trois sorties demandées :
@@ -23,12 +23,12 @@ pas tout précalculer → il faut répondre **en temps réel**.
 
 ## 2. L'idée clé à mettre en avant
 
-> **On ne télécharge jamais tout. On ne télécharge que le fichier du département demandé.**
+> **On ne télécharge jamais tout. On ne récupère que les fichiers des départements concernés.**
 
 Météo-France publie un fichier `.csv.gz` **par département** (~4 Mo pour Paris).
-Quand l'utilisateur demande « Paris, 75 », on récupère uniquement le fichier du 75,
-on le met en **cache local**, et on calcule. C'est ce qui rend l'appli rapide malgré
-le volume total.
+Quand l'utilisateur demande « Paris, 75 », on récupère le fichier du 75 (et, pour une
+commune en bordure, ceux des départements voisins proches), on les met en **cache
+local**, et on calcule. C'est ce qui rend l'appli rapide malgré le volume total.
 
 ---
 
@@ -43,10 +43,11 @@ Utilisateur : "Paris", "75", 2014-01-01 → 2023-12-31
 1. communes.py   → trouve les coordonnées GPS de Paris (lat, lon)
         │           (référentiel des communes ; dictionnaire de secours si GPS manquant)
         ▼
-2. weather.py    → télécharge (ou lit du cache) le fichier météo du département 75
-        │           résout l'URL réelle via l'API data.gouv
+2. stations.py   → départements candidats = 75 + voisins dans un rayon de 40 km
+        │           weather.py télécharge (ou lit du cache) leurs fichiers météo
+        │           (URLs résolues via l'API data.gouv)
         ▼
-3. stations.py   → liste les stations du 75 et les trie par distance à Paris (Haversine)
+3. stations.py   → liste les stations de ces départements, triées par distance (Haversine)
         │
         ▼
 4. frost.py      → parcourt les stations de la plus proche à la plus lointaine,
@@ -56,7 +57,7 @@ Utilisateur : "Paris", "75", 2014-01-01 → 2023-12-31
 5. frost.py      → calcule les 3 statistiques sur la série TN de cette station
         │
         ▼
-   Résultat : total = 119, moyenne = 11,9/an, fréquences par jour de l'année
+   Résultat : total = 106, moyenne = 10,6/an, fréquences par jour de l'année
 ```
 
 ### Rôle de chaque module (`frost_days/`)
@@ -145,7 +146,7 @@ uv run frost-days --commune "Paris" --departement 75 --debut 2014-01-01 --fin 20
 ```
 On regarde si les résultats ont du **sens physique** :
 - la station retenue est **proche** (Luxembourg, 1,7 km) et **peu lacunaire** (3 %) ;
-- ~12 jours de gel/an à Paris : crédible (centre-ville, îlot de chaleur) ;
+- ~11 jours de gel/an à Paris : crédible (centre-ville, îlot de chaleur) ;
 - les jours les plus gélifs tombent **en hiver** (janvier/février), pas en été.
 
 ### Niveau 3 — Cross-check indépendant (LE plus convaincant) ✅
@@ -161,14 +162,14 @@ from frost_days import config
 stats = compute_stats('Paris', '75', '2014-01-01', '2023-12-31')
 df = load_department_tn('75')
 sub = df[df[config.COL_STATION]==stats.station_id]
-manuel_total = int(((sub[config.COL_DATE].dt.year.between(2014,2023)) & (sub[config.COL_TN]<=0)).sum())
+manuel_total = int(((sub[config.COL_DATE].dt.year.between(2014,2023)) & (sub[config.COL_TN]<0)).sum())
 print('Code  :', stats.total_frost_days)
 print('Manuel:', manuel_total)
 assert stats.total_frost_days == manuel_total, 'INCOHÉRENCE !'
 print('OK : les deux calculs concordent.')
 "
 ```
-Résultat vérifié : **Code = 119, Manuel = 119** → le code compte exactement comme un
+Résultat vérifié : **Code = 106, Manuel = 106** → le code compte exactement comme un
 calcul indépendant. C'est la meilleure preuve à montrer au jury.
 
 ### Niveau 4 — Contrôle qualité des données (notebook)
@@ -176,13 +177,38 @@ calcul indépendant. C'est la meilleure preuve à montrer au jury.
 uv run jupyter lab notebooks/exploration.ipynb
 ```
 Le notebook vérifie :
-- l'**unité de `TN`** (valeurs entre ~ −30 et +30 → bien des °C décimaux, le seuil `≤ 0` s'applique tel quel) ;
+- l'**unité de `TN`** (valeurs entre ~ −30 et +30 → bien des °C décimaux, le seuil `< 0` s'applique tel quel) ;
 - le **taux de valeurs manquantes** par station ;
 - la **saisonnalité** du gel (courbe concentrée en hiver).
 
-### Niveau 5 — Exports de vérification du professeur
-Quand les **exports partiels** (2013-2023) seront fournis, la **section 5** du notebook est
-prête : on charge le fichier attendu et on compare commune par commune le total calculé.
+### Niveau 5 — Validation contre les exports de référence (fournie) ✅✅
+Les exports de référence (`validation.zip`) donnent, pour 6 communes, la station retenue
+et le `frost_day` quotidien (vérité terrain). Le script compare automatiquement :
+
+```bash
+uv run python scripts/validate.py
+```
+
+Il vérifie 4 choses par commune : **sélection de la station**, **valeurs `TN`**,
+**définition du gel**, **total de jours de gel**. Résultat : **les 6 communes sont 100 %
+valides**.
+
+| Commune | Station (réf = mienne) | Pipeline `TN` | Total gel |
+|---|---|---|---|
+| Asnières-sur-Saône (01) | AZE #71016001 *(dépt 71)* | écart max 0,000 °C | 190 = 190 |
+| Digne-les-Bains (04) | DIGNE LES BAINS #04070009 | 0,000 °C | 549 = 549 |
+| Espinchal (63) | MARCENAT #15114002 *(dépt 15)* | 0,000 °C | 617 = 617 |
+| Marseille (13) | MARSEILLE #13055029 | 0,000 °C | 49 = 49 |
+| Montfalcon (38) | ST-CHRISTOPHE #26298001 *(dépt 26)* | 0,000 °C | 229 = 229 |
+| Paris (75) | LUXEMBOURG #75106001 | 0,000 °C | 79 = 79 |
+
+Deux points clés découverts grâce à ces données et à mentionner à l'oral :
+1. **Définition du gel** : la référence compte un gel uniquement quand `TN < 0`
+   (strict), pas `≤ 0` comme l'écrit l'énoncé. Le code s'aligne sur la référence.
+2. **Stations inter-départements** : 3 communes sur 6 ont leur station la plus proche
+   dans un **département voisin** (bordure). Le code cherche donc dans le département
+   de la commune **et** les départements proches (rayon 40 km), ce qui reproduit
+   exactement la station de référence.
 
 ---
 
@@ -222,9 +248,9 @@ uv run pytest tests/test_stations.py -k near_tie -v
 
 ## 6. Limites assumées (à mentionner, ça fait sérieux)
 
-- On ne considère que les stations **du département saisi** (une station d'un département
-  voisin pourrait être plus proche).
 - On retient **une seule** station (la plus proche valide), on ne combine pas plusieurs stations.
+- La recherche inter-départements se fait dans un **rayon de 40 km** : une station
+  pertinente au-delà (zone très peu équipée) pourrait être manquée.
 - La moyenne par an inclut les **années partielles** telles quelles si la plage ne couvre
   pas des années entières.
 
@@ -234,7 +260,8 @@ uv run pytest tests/test_stations.py -k near_tie -v
 
 ```bash
 uv sync --extra dev                       # installer l'environnement
-uv run pytest -q                          # tests
+uv run pytest -q                          # tests unitaires
+uv run python scripts/validate.py         # validation contre les données de référence
 uv run frost-days --commune "Lyon" --departement 69 --debut 2014-01-01 --fin 2023-12-31
 uv run frost-days --commune "Paris" --departement 75 --method kdtree   # autre méthode de distance
 uv run streamlit run app/streamlit_app.py # interface graphique
