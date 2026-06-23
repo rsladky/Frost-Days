@@ -55,6 +55,14 @@ COMMUNES_PARQUET_URL = (
 )
 COMMUNES_PARQUET_MARKER = ".parquet"
 
+# Repli CSV (lu nativement par pandas, sans moteur parquet type pyarrow).
+COMMUNES_CSV_URL = (
+    "https://static.data.gouv.fr/resources/"
+    "communes-et-villes-de-france-en-csv-excel-json-parquet-et-feather/"
+    "20260617-160400/communes-france-2026.csv.gz"
+)
+COMMUNES_CSV_MARKER = ".csv.gz"
+
 # Colonnes du référentiel communes.
 COM_NAME = "nom_standard"
 COM_NAME_NOACCENT = "nom_sans_accent"

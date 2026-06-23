@@ -10,35 +10,52 @@ from frost_days import config
 from frost_days.datagouv import download, normalize, resolve_resource_url
 
 
-def _commune_file() -> "Path":  # type: ignore[name-defined]
-    """Télécharge (1×) le référentiel parquet des communes et renvoie son chemin."""
-    from pathlib import Path  # local pour garder le module léger à l'import
+_COLS = [
+    config.COM_NAME,
+    config.COM_DEPT,
+    config.COM_LAT,
+    config.COM_LON,
+    config.COM_LAT_FALLBACK,
+    config.COM_LON_FALLBACK,
+]
 
+
+def _read_parquet() -> pd.DataFrame:
+    """Lit le référentiel au format parquet (nécessite pyarrow/fastparquet)."""
     url = (
         resolve_resource_url(
             config.COMMUNES_DATASET_SLUG, config.COMMUNES_PARQUET_MARKER
         )
         or config.COMMUNES_PARQUET_URL
     )
-    dest: Path = config.COMMUNES_DIR / "communes.parquet"
-    return download(url, dest)
+    path = download(url, config.COMMUNES_DIR / "communes.parquet")
+    return pd.read_parquet(path, columns=_COLS)
+
+
+def _read_csv() -> pd.DataFrame:
+    """Repli CSV (.csv.gz), lu nativement par pandas sans moteur parquet."""
+    url = (
+        resolve_resource_url(
+            config.COMMUNES_DATASET_SLUG, config.COMMUNES_CSV_MARKER
+        )
+        or config.COMMUNES_CSV_URL
+    )
+    path = download(url, config.COMMUNES_DIR / "communes.csv.gz")
+    return pd.read_csv(path, usecols=_COLS, dtype={config.COM_DEPT: "string"})
 
 
 @lru_cache(maxsize=1)
 def load_communes() -> pd.DataFrame:
     """Charge le référentiel des communes (mis en cache mémoire).
 
-    Conserve les colonnes utiles et ajoute une clé normalisée de recherche."""
-    path = _commune_file()
-    cols = [
-        config.COM_NAME,
-        config.COM_DEPT,
-        config.COM_LAT,
-        config.COM_LON,
-        config.COM_LAT_FALLBACK,
-        config.COM_LON_FALLBACK,
-    ]
-    df = pd.read_parquet(path, columns=cols)
+    Préfère le parquet (plus rapide) ; si aucun moteur parquet n'est disponible
+    dans l'environnement (ex. kernel Jupyter sans pyarrow), bascule
+    automatiquement sur le CSV. Conserve les colonnes utiles et ajoute une clé
+    normalisée de recherche."""
+    try:
+        df = _read_parquet()
+    except ImportError:
+        df = _read_csv()
     df[config.COM_DEPT] = df[config.COM_DEPT].astype(str).str.strip()
     df["_key"] = df[config.COM_NAME].map(normalize)
     return df
