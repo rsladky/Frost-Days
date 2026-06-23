@@ -7,9 +7,15 @@ import datetime as dt
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from streamlit.components.v1 import html as st_html
 
 from frost_days import config
 from frost_days.frost import NoReliableStationError, compute_stats
+
+try:
+    import folium
+except Exception:  # pragma: no cover - optional dependency for UI
+    folium = None
 
 st.set_page_config(page_title="Frost-Days ❄️", page_icon="❄️", layout="wide")
 
@@ -117,5 +123,41 @@ if go:
         use_container_width=True,
         hide_index=True,
     )
+
+    # --- Carte interactive (commune + station retenue) ---------------------
+    try:
+        if folium is None:
+            st.warning("Installez 'folium' pour afficher la carte : pip install folium")
+        else:
+            from frost_days.communes import get_commune_coords
+            from frost_days.stations import list_stations
+
+            lat_commune, lon_commune = get_commune_coords(commune, departement)
+            stations = list_stations(departement)
+            # Rechercher la station retenue dans la liste des stations
+            match = stations[stations[config.COL_STATION].astype(str) == str(res["station_id"]) ]
+            if not match.empty:
+                st_lat = float(match.iloc[0][config.COL_LAT])
+                st_lon = float(match.iloc[0][config.COL_LON])
+            else:
+                # Repli : prendre la première station si l'id est introuvable
+                row = stations.iloc[0]
+                st_lat = float(row[config.COL_LAT])
+                st_lon = float(row[config.COL_LON])
+
+            m = folium.Map(location=[lat_commune, lon_commune], zoom_start=10)
+            folium.Marker(
+                [lat_commune, lon_commune], popup=f"Commune: {commune}",
+                icon=folium.Icon(color="blue"), tooltip=commune
+            ).add_to(m)
+            folium.Marker(
+                [st_lat, st_lon], popup=f"Station: {res['station_name']}",
+                icon=folium.Icon(color="red"), tooltip=res['station_name']
+            ).add_to(m)
+
+            st.subheader("Carte — commune et station retenue")
+            st_html(m._repr_html_(), height=450)
+    except Exception as exc:  # pragma: no cover - best-effort UI feature
+        st.warning(f"Impossible d'afficher la carte: {exc}")
 else:
     st.info("Renseignez une commune, un département et une plage de dates, puis cliquez sur **Calculer**.")

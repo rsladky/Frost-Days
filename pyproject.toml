@@ -12,6 +12,7 @@ dependencies = [
     "requests>=2.31",
     "streamlit>=1.30",
     "plotly>=5.18",
+    "folium>=0.20.0",
 ]
 
 [project.optional-dependencies]
