@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Environnements
+.venv/
+venv/
+.env
+
+# uv
+uv.lock
+
+# Données téléchargées / cache (jamais commitées)
+data/cache/
+data/communes/
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
