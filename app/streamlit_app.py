@@ -63,101 +63,196 @@ with st.sidebar:
     method = st.selectbox("Méthode de distance", ["haversine", "kdtree"], index=0)
     go = st.button("Calculer", type="primary", use_container_width=True)
 
-if go:
-    if fin < debut:
-        st.error("La date de fin doit être postérieure à la date de début.")
-        st.stop()
+tab1, tab2 = st.tabs(["Commune unique", "Plusieurs communes"])
 
-    try:
-        with st.spinner("Téléchargement des données et calcul…"):
-            res = _run(commune, departement, debut, fin, method)
-    except (LookupError, ValueError, NoReliableStationError) as exc:
-        st.error(str(exc))
-        st.stop()
+with tab1:
+    if go:
+        if fin < debut:
+            st.error("La date de fin doit être postérieure à la date de début.")
+            st.stop()
 
-    st.success(
-        f"Station retenue : **{res['station_name']}** (#{res['station_id']}) — "
-        f"{res['distance_km']:.1f} km, {res['missing_ratio']:.0%} de valeurs manquantes."
+        try:
+            with st.spinner("Téléchargement des données et calcul…"):
+                res = _run(commune, departement, debut, fin, method)
+        except (LookupError, ValueError, NoReliableStationError) as exc:
+            st.error(str(exc))
+            st.stop()
+
+        st.success(
+            f"Station retenue : **{res['station_name']}** (#{res['station_id']}) — "
+            f"{res['distance_km']:.1f} km, {res['missing_ratio']:.0%} de valeurs manquantes."
+        )
+
+        c1, c2 = st.columns(2)
+        c1.metric("Jours de gel (total)", res["total"])
+        c2.metric("Jours de gel (moyenne / an)", f"{res['avg']:.1f}")
+
+        # --- Jours de gel par année -------------------------------------------------
+        st.subheader("Jours de gel par année")
+        per_year = res["per_year"].rename(columns={"year": "Année", "TN": "Jours de gel"})
+        per_year.columns = ["Année", "Jours de gel"]
+        fig_year = px.bar(per_year, x="Année", y="Jours de gel", text="Jours de gel")
+        fig_year.update_traces(textposition="outside")
+        st.plotly_chart(fig_year, use_container_width=True)
+
+        # --- Saisonnalité par jour de l'année --------------------------------------
+        st.subheader("Fréquence de gel par jour de l'année (hors 29 février)")
+        per_day = res["per_day"].rename(
+            columns={
+                "mmdd": "Jour",
+                "count_gel": "Nb de gels",
+                "n_annees_observees": "Années observées",
+                "freq_relative": "Fréquence",
+            }
+        )
+        per_day["Date"] = pd.to_datetime("2001-" + per_day["Jour"], format="%Y-%m-%d")
+        per_day = per_day.sort_values("Date")
+        fig_day = px.line(
+            per_day,
+            x="Date",
+            y="Fréquence",
+            hover_data=["Jour", "Nb de gels", "Années observées"],
+        )
+        fig_day.update_yaxes(tickformat=".0%", title="Fréquence de gel")
+        fig_day.update_xaxes(dtick="M1", tickformat="%b", title="Mois")
+        st.plotly_chart(fig_day, use_container_width=True)
+
+        # --- Tableau détaillé -------------------------------------------------------
+        st.subheader("Détail par jour de l'année")
+        table = per_day[["Jour", "Nb de gels", "Années observées", "Fréquence"]].copy()
+        table["Fréquence"] = (table["Fréquence"] * 100).round(1)
+        st.dataframe(
+            table.rename(columns={"Fréquence": "Fréquence (%)"}),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        # --- Carte interactive (commune + station retenue) ---------------------
+        try:
+            if folium is None:
+                st.warning("Installez 'folium' pour afficher la carte : pip install folium")
+            else:
+                from frost_days.communes import get_commune_coords
+                from frost_days.stations import list_stations
+
+                lat_commune, lon_commune = get_commune_coords(commune, departement)
+                stations = list_stations(departement)
+                # Rechercher la station retenue dans la liste des stations
+                match = stations[stations[config.COL_STATION].astype(str) == str(res["station_id"]) ]
+                if not match.empty:
+                    st_lat = float(match.iloc[0][config.COL_LAT])
+                    st_lon = float(match.iloc[0][config.COL_LON])
+                else:
+                    # Repli : prendre la première station si l'id est introuvable
+                    row = stations.iloc[0]
+                    st_lat = float(row[config.COL_LAT])
+                    st_lon = float(row[config.COL_LON])
+
+                m = folium.Map(location=[lat_commune, lon_commune], zoom_start=10)
+                folium.Marker(
+                    [lat_commune, lon_commune], popup=f"Commune: {commune}",
+                    icon=folium.Icon(color="blue"), tooltip=commune
+                ).add_to(m)
+                folium.Marker(
+                    [st_lat, st_lon], popup=f"Station: {res['station_name']}",
+                    icon=folium.Icon(color="red"), tooltip=res['station_name']
+                ).add_to(m)
+
+                st.subheader("Carte — commune et station retenue")
+                st_html(m._repr_html_(), height=450)
+        except Exception as exc:  # pragma: no cover - best-effort UI feature
+            st.warning(f"Impossible d'afficher la carte: {exc}")
+
+    else:
+        st.info("Renseignez une commune, un département et une plage de dates, puis cliquez sur **Calculer**.")
+
+with tab2:
+    multi_communes = st.text_area(
+        "Liste de communes (une par ligne, format: Commune,Département)",
+        value="",
+        placeholder="Exemple:\nParis,75\nLille,59\nBrest,29",
+        help="Saisissez une ligne par commune avec son département (numéro ou code).",
     )
+    multi_go = st.button("Afficher plusieurs sur la carte", use_container_width=True)
 
-    c1, c2 = st.columns(2)
-    c1.metric("Jours de gel (total)", res["total"])
-    c2.metric("Jours de gel (moyenne / an)", f"{res['avg']:.1f}")
-
-    # --- Jours de gel par année -------------------------------------------------
-    st.subheader("Jours de gel par année")
-    per_year = res["per_year"].rename(columns={"year": "Année", "TN": "Jours de gel"})
-    per_year.columns = ["Année", "Jours de gel"]
-    fig_year = px.bar(per_year, x="Année", y="Jours de gel", text="Jours de gel")
-    fig_year.update_traces(textposition="outside")
-    st.plotly_chart(fig_year, use_container_width=True)
-
-    # --- Saisonnalité par jour de l'année --------------------------------------
-    st.subheader("Fréquence de gel par jour de l'année (hors 29 février)")
-    per_day = res["per_day"].rename(
-        columns={
-            "mmdd": "Jour",
-            "count_gel": "Nb de gels",
-            "n_annees_observees": "Années observées",
-            "freq_relative": "Fréquence",
-        }
-    )
-    per_day["Date"] = pd.to_datetime("2001-" + per_day["Jour"], format="%Y-%m-%d")
-    per_day = per_day.sort_values("Date")
-    fig_day = px.line(
-        per_day,
-        x="Date",
-        y="Fréquence",
-        hover_data=["Jour", "Nb de gels", "Années observées"],
-    )
-    fig_day.update_yaxes(tickformat=".0%", title="Fréquence de gel")
-    fig_day.update_xaxes(dtick="M1", tickformat="%b", title="Mois")
-    st.plotly_chart(fig_day, use_container_width=True)
-
-    # --- Tableau détaillé -------------------------------------------------------
-    st.subheader("Détail par jour de l'année")
-    table = per_day[["Jour", "Nb de gels", "Années observées", "Fréquence"]].copy()
-    table["Fréquence"] = (table["Fréquence"] * 100).round(1)
-    st.dataframe(
-        table.rename(columns={"Fréquence": "Fréquence (%)"}),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    # --- Carte interactive (commune + station retenue) ---------------------
-    try:
+    # --- Recherche multiple et carte pour plusieurs communes --------------------
+    if multi_go:
         if folium is None:
             st.warning("Installez 'folium' pour afficher la carte : pip install folium")
         else:
             from frost_days.communes import get_commune_coords
             from frost_days.stations import list_stations
 
-            lat_commune, lon_commune = get_commune_coords(commune, departement)
-            stations = list_stations(departement)
-            # Rechercher la station retenue dans la liste des stations
-            match = stations[stations[config.COL_STATION].astype(str) == str(res["station_id"]) ]
-            if not match.empty:
-                st_lat = float(match.iloc[0][config.COL_LAT])
-                st_lon = float(match.iloc[0][config.COL_LON])
+            lines = [ln.strip() for ln in multi_communes.splitlines() if ln.strip()]
+            if not lines:
+                st.error("Aucune commune renseignée — utilisez le format 'Commune,Département' par ligne.")
             else:
-                # Repli : prendre la première station si l'id est introuvable
-                row = stations.iloc[0]
-                st_lat = float(row[config.COL_LAT])
-                st_lon = float(row[config.COL_LON])
+                points = []
+                errors = []
+                for ln in lines:
+                    try:
+                        if "," in ln:
+                            name, dept = [p.strip() for p in ln.split(",", 1)]
+                        elif ";" in ln:
+                            name, dept = [p.strip() for p in ln.split(";", 1)]
+                        else:
+                            raise ValueError("Format invalide — attendre 'Commune,Département'.")
 
-            m = folium.Map(location=[lat_commune, lon_commune], zoom_start=10)
-            folium.Marker(
-                [lat_commune, lon_commune], popup=f"Commune: {commune}",
-                icon=folium.Icon(color="blue"), tooltip=commune
-            ).add_to(m)
-            folium.Marker(
-                [st_lat, st_lon], popup=f"Station: {res['station_name']}",
-                icon=folium.Icon(color="red"), tooltip=res['station_name']
-            ).add_to(m)
+                        # Réutiliser la même plage de dates et méthode que pour la recherche simple
+                        try:
+                            res = _run(name, dept, debut, fin, method)
+                        except Exception as exc:
+                            raise RuntimeError(f"Erreur pour {name} ({dept}): {exc}")
 
-            st.subheader("Carte — commune et station retenue")
-            st_html(m._repr_html_(), height=450)
-    except Exception as exc:  # pragma: no cover - best-effort UI feature
-        st.warning(f"Impossible d'afficher la carte: {exc}")
-else:
-    st.info("Renseignez une commune, un département et une plage de dates, puis cliquez sur **Calculer**.")
+                        lat_commune, lon_commune = get_commune_coords(name, dept)
+                        stations = list_stations(dept)
+                        match = stations[stations[config.COL_STATION].astype(str) == str(res["station_id"]) ]
+                        if not match.empty:
+                            st_lat = float(match.iloc[0][config.COL_LAT])
+                            st_lon = float(match.iloc[0][config.COL_LON])
+                        else:
+                            row = stations.iloc[0]
+                            st_lat = float(row[config.COL_LAT])
+                            st_lon = float(row[config.COL_LON])
+
+                        points.append({
+                            "commune": name,
+                            "departement": dept,
+                            "commune_lat": lat_commune,
+                            "commune_lon": lon_commune,
+                            "station_name": res["station_name"],
+                            "station_id": res["station_id"],
+                            "station_lat": st_lat,
+                            "station_lon": st_lon,
+                        })
+                    except Exception as exc:
+                        errors.append(str(exc))
+
+                if errors:
+                    for e in errors:
+                        st.warning(e)
+
+                if points:
+                    # Centrer la carte sur la moyenne des communes
+                    avg_lat = sum(p["commune_lat"] for p in points) / len(points)
+                    avg_lon = sum(p["commune_lon"] for p in points) / len(points)
+                    m = folium.Map(location=[avg_lat, avg_lon], zoom_start=6)
+
+                    for p in points:
+                        folium.Marker(
+                            [p["commune_lat"], p["commune_lon"]],
+                            popup=f"Commune: {p['commune']} ({p['departement']})",
+                            icon=folium.Icon(color="blue"),
+                            tooltip=p["commune"],
+                        ).add_to(m)
+                        folium.Marker(
+                            [p["station_lat"], p["station_lon"]],
+                            popup=f"Station: {p['station_name']} (#{p['station_id']})",
+                            icon=folium.Icon(color="red", icon="info-sign"),
+                            tooltip=p["station_name"],
+                        ).add_to(m)
+
+                    st.subheader("Carte — plusieurs communes et leurs stations")
+                    st_html(m._repr_html_(), height=550)
+    else:
+        st.info("Renseignez une commune, un département et une plage de dates, puis cliquez sur **Calculer**.")
