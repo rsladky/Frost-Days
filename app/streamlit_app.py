@@ -8,6 +8,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 from streamlit.components.v1 import html as st_html
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from frost_days import config
 from frost_days.frost import NoReliableStationError, compute_stats
@@ -187,8 +188,10 @@ with tab2:
             if not lines:
                 st.error("Aucune commune renseignée — utilisez le format 'Commune,Département' par ligne.")
             else:
+                # Paralléliser les appels coûteux à `_run` pour plusieurs communes
                 points = []
                 errors = []
+                parsed = []
                 for ln in lines:
                     try:
                         if "," in ln:
@@ -197,40 +200,52 @@ with tab2:
                             name, dept = [p.strip() for p in ln.split(";", 1)]
                         else:
                             raise ValueError("Format invalide — attendre 'Commune,Département'.")
-
-                        # Réutiliser la même plage de dates et méthode que pour la recherche simple
-                        try:
-                            res = _run(name, dept, debut, fin, method)
-                        except Exception as exc:
-                            raise RuntimeError(f"Erreur pour {name} ({dept}): {exc}")
-
-                        lat_commune, lon_commune = get_commune_coords(name, dept)
-                        stations = list_stations(dept)
-                        match = stations[stations[config.COL_STATION].astype(str) == str(res["station_id"]) ]
-                        if not match.empty:
-                            st_lat = float(match.iloc[0][config.COL_LAT])
-                            st_lon = float(match.iloc[0][config.COL_LON])
-                        else:
-                            row = stations.iloc[0]
-                            st_lat = float(row[config.COL_LAT])
-                            st_lon = float(row[config.COL_LON])
-
-                        points.append({
-                            "commune": name,
-                            "departement": dept,
-                            "commune_lat": lat_commune,
-                            "commune_lon": lon_commune,
-                            "station_name": res["station_name"],
-                            "station_id": res["station_id"],
-                            "station_lat": st_lat,
-                            "station_lon": st_lon,
-                            "total": res.get("total"),
-                            "avg": res.get("avg"),
-                            "per_year": res.get("per_year"),
-                            "per_day": res.get("per_day"),
-                        })
+                        parsed.append((ln, name, dept))
                     except Exception as exc:
                         errors.append(str(exc))
+
+                max_workers = min(8, max(1, len(parsed)))
+                futures = {}
+                with ThreadPoolExecutor(max_workers=max_workers) as exe:
+                    for ln, name, dept in parsed:
+                        futures[exe.submit(_run, name, dept, debut, fin, method)] = (ln, name, dept)
+
+                    for fut in as_completed(futures):
+                        ln, name, dept = futures[fut]
+                        try:
+                            res = fut.result()
+                        except Exception as exc:
+                            errors.append(f"Erreur pour {ln}: {exc}")
+                            continue
+
+                        try:
+                            lat_commune, lon_commune = get_commune_coords(name, dept)
+                            stations = list_stations(dept)
+                            match = stations[stations[config.COL_STATION].astype(str) == str(res["station_id"]) ]
+                            if not match.empty:
+                                st_lat = float(match.iloc[0][config.COL_LAT])
+                                st_lon = float(match.iloc[0][config.COL_LON])
+                            else:
+                                row = stations.iloc[0]
+                                st_lat = float(row[config.COL_LAT])
+                                st_lon = float(row[config.COL_LON])
+
+                            points.append({
+                                "commune": name,
+                                "departement": dept,
+                                "commune_lat": lat_commune,
+                                "commune_lon": lon_commune,
+                                "station_name": res["station_name"],
+                                "station_id": res["station_id"],
+                                "station_lat": st_lat,
+                                "station_lon": st_lon,
+                                "total": res.get("total"),
+                                "avg": res.get("avg"),
+                                "per_year": res.get("per_year"),
+                                "per_day": res.get("per_day"),
+                            })
+                        except Exception as exc:
+                            errors.append(f"Erreur post-traitement pour {ln}: {exc}")
 
                 if errors:
                     for e in errors:
