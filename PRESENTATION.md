@@ -202,6 +202,18 @@ valides**.
 | Montfalcon (38) | ST-CHRISTOPHE #26298001 *(dépt 26)* | 0,000 °C | 229 = 229 |
 | Paris (75) | LUXEMBOURG #75106001 | 0,000 °C | 79 = 79 |
 
+**Au-delà de la vérification : régénérer la donnée complète.** Les exports fournis
+ne couvrent qu'une première portion de chaque série (`*_weather_data_half.csv`). Le
+script `scripts/generate_validation.py` réutilise le pipeline (`select_station`,
+`is_frost`) pour produire le **fichier complet 2013-2024** de chaque commune dans
+`data/validation/generated/`, en vérifiant que la portion commune avec l'export
+partiel est strictement identique (écart `tmin` max `0,000 °C`, 0 écart sur
+`frost_day`) avant d'écrire « le reste » de la série :
+
+```bash
+uv run python scripts/generate_validation.py
+```
+
 Deux points clés découverts grâce à ces données et à mentionner à l'oral :
 1. **Définition du gel** : la référence compte un gel uniquement quand `TN < 0`
    (strict), pas `≤ 0` comme l'écrit l'énoncé. Le code s'aligne sur la référence.

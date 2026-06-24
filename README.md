@@ -92,6 +92,22 @@ sont **strictement identiques** à la référence (écart max 0,000 °C), y comp
 les communes dont la station la plus proche est dans un **département voisin**
 (Asnières-sur-Saône/01 → 71, Espinchal/63 → 15, Montfalcon/38 → 26).
 
+### Génération de la donnée complète à partir des exports partiels
+
+Les exports fournis ne couvrent qu'une **première portion** de la série de chaque
+station (`*_weather_data_half.csv`). Le script suivant utilise le programme
+(sélection de station + règle de gel) pour produire le **fichier complet** sur
+2013-2024 et vérifie que la portion commune avec l'export partiel est identique :
+
+```bash
+uv run python scripts/generate_validation.py
+```
+
+Résultat : pour les 6 communes, la station retenue par le programme est bien celle
+de référence, le recouvrement avec l'export partiel est exact (écart `tmin` max
+`0,000 °C`, `frost_day` identique), et les fichiers complets sont écrits dans
+`data/validation/generated/`.
+
 ## Choix de station inter-départements
 
 La station la plus proche n'est pas forcément dans le département saisi : une
