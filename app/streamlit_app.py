@@ -224,6 +224,10 @@ with tab2:
                             "station_id": res["station_id"],
                             "station_lat": st_lat,
                             "station_lon": st_lon,
+                            "total": res.get("total"),
+                            "avg": res.get("avg"),
+                            "per_year": res.get("per_year"),
+                            "per_day": res.get("per_day"),
                         })
                     except Exception as exc:
                         errors.append(str(exc))
@@ -233,6 +237,53 @@ with tab2:
                         st.warning(e)
 
                 if points:
+                    # --- Graphiques comparatifs ---------------------------------
+                    try:
+                        totals_df = pd.DataFrame(
+                            [
+                                {"Commune": p["commune"], "Total": p.get("total", None), "Avg": p.get("avg", None)}
+                                for p in points
+                            ]
+                        )
+                        st.subheader("Comparaison entre communes")
+                        fig_tot = px.bar(totals_df, x="Commune", y="Total", text="Total")
+                        fig_tot.update_traces(textposition="outside")
+                        st.plotly_chart(fig_tot, use_container_width=True)
+
+                        # Série temporelle par année pour chaque commune
+                        frames = []
+                        for p in points:
+                            df = p.get("per_year")
+                            if df is None or df.empty:
+                                continue
+                            df_copy = df.copy()
+                            # Normaliser les noms de colonnes
+                            if "year" in df_copy.columns:
+                                ycol = "year"
+                            elif "Année" in df_copy.columns:
+                                ycol = "Année"
+                            else:
+                                ycol = df_copy.columns[0]
+
+                            if "TN" in df_copy.columns:
+                                tcol = "TN"
+                            elif "Jours de gel" in df_copy.columns:
+                                tcol = "Jours de gel"
+                            else:
+                                tcol = [c for c in df_copy.columns if c != ycol][0]
+
+                            df_copy = df_copy.rename(columns={ycol: "Année", tcol: "Jours de gel"})
+                            df_copy["Commune"] = p["commune"]
+                            frames.append(df_copy[["Année", "Jours de gel", "Commune"]])
+
+                        if frames:
+                            df_year = pd.concat(frames, ignore_index=True)
+                            fig_comp = px.line(df_year, x="Année", y="Jours de gel", color="Commune", markers=True)
+                            st.subheader("Évolution annuelle des jours de gel — comparaison")
+                            st.plotly_chart(fig_comp, use_container_width=True)
+                    except Exception as exc:  # pragma: no cover - best-effort UI feature
+                        st.warning(f"Impossible de tracer les graphiques comparatifs: {exc}")
+
                     # Centrer la carte sur la moyenne des communes
                     avg_lat = sum(p["commune_lat"] for p in points) / len(points)
                     avg_lon = sum(p["commune_lon"] for p in points) / len(points)
