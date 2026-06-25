@@ -38,8 +38,8 @@ class FrostStats:
 
 
 def is_frost(tn: pd.Series) -> pd.Series:
-    """Masque booléen des jours de gel (TN < 0). Les NaN comptent comme False."""
-    return tn < config.FROST_THRESHOLD
+    """Masque booléen des jours de gel (TN ≤ 0). Les NaN comptent comme False."""
+    return tn <= config.FROST_THRESHOLD
 
 
 def missing_ratio(tn: pd.Series, start: pd.Timestamp, end: pd.Timestamp) -> float:
@@ -107,7 +107,7 @@ def _per_day_of_year(tn: pd.Series) -> pd.DataFrame:
     df["mmdd"] = df.index.strftime("%m-%d")
     df["year"] = df.index.year
     df = df[df["mmdd"] != "02-29"]            # 29 février non pertinent
-    df["frost"] = df["tn"] < config.FROST_THRESHOLD
+    df["frost"] = df["tn"] <= config.FROST_THRESHOLD
     df["observed"] = df["tn"].notna()
 
     grouped = df.groupby("mmdd")

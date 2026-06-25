@@ -26,14 +26,14 @@ def test_is_frost_threshold():
         [-5.0, 0.0, 0.1, np.nan],
     )
     mask = is_frost(tn)
-    # Seuil STRICT (TN < 0) : 0.0 n'est PAS un gel, NaN non plus.
-    assert mask.tolist() == [True, False, False, False]
+    # Seuil large (TN ≤ 0) : 0.0 EST un gel, NaN ne l'est pas.
+    assert mask.tolist() == [True, True, False, False]
 
 
 def test_is_frost_count():
     tn = make_tn(pd.date_range("2020-01-01", periods=5), [-1, -2, 3, 0, 10])
-    # -1 et -2 gèlent ; 0 ne gèle pas (seuil strict).
-    assert int(is_frost(tn).sum()) == 2
+    # -1, -2 et 0 gèlent (seuil large TN ≤ 0).
+    assert int(is_frost(tn).sum()) == 3
 
 
 # --- missing_ratio -------------------------------------------------------------

@@ -18,6 +18,8 @@ data/cache/
 data/communes/
 data/validation/
 validation.zip
+validation_2
+validation_3
 
 # OS / IDE
 .DS_Store

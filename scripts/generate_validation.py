@@ -1,6 +1,6 @@
 """Génère le fichier météo COMPLET (« le reste ») pour les 6 communes de validation.
 
-Les exports fournis par l'enseignant (`*_weather_data_half.csv`) ne couvrent que la
+Les exports fournis par l'enseignant (`*_short.csv`) ne couvrent que la
 première portion de la série de la station retenue. Ce script utilise le programme
 (sélection de station + règle de gel) pour reproduire ces fichiers et produire la
 suite manquante, sur une fenêtre fixe 2013-01-01 → 2024-12-31 (clippée à la
@@ -19,7 +19,7 @@ import pandas as pd
 from frost_days.frost import is_frost, select_station
 from frost_days.weather import load_department_tn
 
-from validate import VALIDATION_DIR, CITY_REF, dept_of, parse_filename, resolve_city
+from validate import VALIDATION_DIR, CITY_REF, REF_SUFFIX, dept_of, parse_filename, resolve_city
 
 OUT_DIR = "data/validation/generated"
 WINDOW_START = pd.Timestamp("2013-01-01")
@@ -88,7 +88,7 @@ def build_full_dataframe(tn: pd.Series, station_id: str, meta: dict) -> pd.DataF
 
 
 def check_overlap(generated: pd.DataFrame, ref_path: str) -> dict:
-    """Compare le DataFrame généré au fichier `_half` sur leur partie commune."""
+    """Compare le DataFrame généré au fichier de référence sur leur partie commune."""
     ref = pd.read_csv(ref_path)
     merged = generated.merge(ref[["date", "tmin", "frost_day"]], on="date", how="inner", suffixes=("_gen", "_ref"))
     diff = (merged["tmin_gen"] - merged["tmin_ref"]).abs()
@@ -142,7 +142,7 @@ def generate_one(path: str, city_df: pd.DataFrame) -> dict:
 
 
 def main() -> int:
-    files = sorted(glob.glob(os.path.join(VALIDATION_DIR, "*_weather_data_half.csv")))
+    files = sorted(glob.glob(os.path.join(VALIDATION_DIR, "*_[0-9][0-9]" + REF_SUFFIX)))
     if not files:
         print(f"Aucun fichier de validation dans {VALIDATION_DIR}")
         return 1
@@ -159,7 +159,7 @@ def main() -> int:
         print(f"  Total gel (2013→2024) : {r['total_frost']}")
         ok_overlap = r["overlap_rows"] > 0 and r["max_tmin_diff"] <= 0.05 and r["frost_mismatch"] == 0
         print(
-            f"  Recouvrement avec le _half : {r['overlap_rows']}/{r['ref_rows']} lignes, "
+            f"  Recouvrement avec l'export de référence : {r['overlap_rows']}/{r['ref_rows']} lignes, "
             f"écart tmin max = {r['max_tmin_diff']:.3f} °C, frost_day écarts = {r['frost_mismatch']} "
             f"[{'OK' if ok_overlap else 'KO'}]"
         )

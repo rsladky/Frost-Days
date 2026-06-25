@@ -1,10 +1,10 @@
 """Validation du pipeline Frost-Days contre les exports de référence fournis.
 
-Pour chaque commune de ``data/validation/validation/*_weather_data_half.csv`` :
+Pour chaque commune de ``data/validation/validation/*_short.csv`` :
 
 1. SÉLECTION  — la station retenue par mon code == la station de référence ?
 2. PIPELINE   — les valeurs TN que je charge == celles de la référence (jours communs) ?
-3. DÉFINITION — ma règle de gel (TN < 0) reproduit la colonne ``frost_day`` ?
+3. DÉFINITION — ma règle de gel (TN ≤ 0) reproduit la colonne ``frost_day`` ?
 4. TOTAL      — mon total de jours de gel == celui de la référence ?
 
 Usage : uv run python scripts/validate.py
@@ -23,13 +23,14 @@ from frost_days.frost import is_frost, select_station
 from frost_days.weather import load_station_tn
 
 VALIDATION_DIR = "data/validation/validation"
-CITY_REF = os.path.join(VALIDATION_DIR, "city_df_3000.csv")
+CITY_REF = os.path.join(VALIDATION_DIR, "city_df_short.csv")
 TOL = 0.05  # tolérance °C pour comparer les TN (arrondis d'export)
+REF_SUFFIX = "_short.csv"
 
 
 def parse_filename(path: str) -> tuple[str, str]:
-    """'Asnières-sur-Saône_01_weather_data_half.csv' -> ('Asnières-sur-Saône', '01')."""
-    base = os.path.basename(path).replace("_weather_data_half.csv", "")
+    """'Digne-les-Bains_04_short.csv' -> ('Digne-les-Bains', '04')."""
+    base = os.path.basename(path).replace(REF_SUFFIX, "")
     m = re.match(r"^(.*)_(\w{2,3})$", base)
     return m.group(1), m.group(2)
 
@@ -117,7 +118,7 @@ def check_city(path: str, city_df: pd.DataFrame) -> dict:
 
 
 def main() -> int:
-    files = sorted(glob.glob(os.path.join(VALIDATION_DIR, "*_weather_data_half.csv")))
+    files = sorted(glob.glob(os.path.join(VALIDATION_DIR, "*_[0-9][0-9]" + REF_SUFFIX)))
     if not files:
         print(f"Aucun fichier de validation dans {VALIDATION_DIR}")
         return 1

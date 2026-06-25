@@ -9,10 +9,9 @@ PERIOD_START = "2014-01-01"
 PERIOD_END = "2023-12-31"
 
 # --- Règles métier ---
-# Jour de gel : température minimale TN strictement inférieure à 0 °C (TN < 0).
-# NB : l'énoncé écrit « inférieure ou égale à 0 °C », mais les données de
-# validation fournies comptent un gel uniquement quand TN < 0 (un jour à
-# exactement 0,0 °C n'est PAS un gel). On s'aligne sur les données de validation.
+# Jour de gel : température minimale TN inférieure ou égale à 0 °C (TN ≤ 0),
+# conformément à l'énoncé. Un jour à exactement 0,0 °C est un gel — c'est aussi
+# la règle des données de validation fournies.
 FROST_THRESHOLD = 0.0
 # Une station avec plus de 35 % de valeurs manquantes sur la période n'est pas utilisée.
 MAX_MISSING_RATIO = 0.35

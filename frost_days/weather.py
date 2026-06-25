@@ -19,19 +19,25 @@ def normalize_dept(departement: str | int) -> str:
     return dept
 
 
+# Météo-France publie encore la Corse sous l'ancien code commun « 20 » (un seul
+# fichier pour 2A + 2B), alors que le référentiel des communes utilise 2A/2B.
+_CORSICA_LEGACY_CODE = {"2A": "20", "2B": "20"}
+
+
 def department_url(dept: str) -> str:
     """Résout l'URL du fichier quotidien « previous » du département.
 
     Le nom de fichier évoluant dans le temps, on interroge l'API data.gouv et on
     retient la ressource correspondant au département + période « previous ».
     Repli sur le gabarit codé en dur si l'API est injoignable."""
-    marker = f"Q_{dept}{config.METEO_PREVIOUS_MARKER}"
+    file_dept = _CORSICA_LEGACY_CODE.get(dept, dept)
+    marker = f"Q_{file_dept}{config.METEO_PREVIOUS_MARKER}"
     url = resolve_resource_url(
         config.METEO_DATASET_SLUG, marker, config.METEO_RRTVENT_MARKER
     )
     if url:
         return url
-    return config.METEO_BASE_URL + config.METEO_PREVIOUS_TEMPLATE.format(dept=dept)
+    return config.METEO_BASE_URL + config.METEO_PREVIOUS_TEMPLATE.format(dept=file_dept)
 
 
 def download_department(departement: str | int) -> Path:

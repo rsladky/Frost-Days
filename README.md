@@ -5,12 +5,9 @@ dates, à partir des données climatologiques quotidiennes de Météo-France
 (open data, [data.gouv.fr](https://www.data.gouv.fr/datasets/donnees-climatologiques-de-base-quotidiennes)).
 
 Un **jour de gel** est défini comme un jour où la température minimale (`TN`) a été
-**strictement inférieure à 0 °C** (`TN < 0`).
-
-> Note : l'énoncé écrit « inférieure ou égale à 0 °C », mais les **données de
-> validation** fournies comptent un gel uniquement quand `TN < 0` (un jour à
-> exactement 0,0 °C n'est pas un gel). Le code s'aligne sur les données de
-> validation — voir la section *Validation* ci-dessous.
+**inférieure ou égale à 0 °C** (`TN ≤ 0`), conformément à l'énoncé — un jour à
+exactement 0,0 °C est un gel. C'est aussi la règle des **données de validation**
+fournies — voir la section *Validation* ci-dessous.
 
 ## Fonctionnalités
 
