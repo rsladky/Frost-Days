@@ -20,10 +20,281 @@ except Exception:  # pragma: no cover - optional dependency for UI
 
 st.set_page_config(page_title="Frost-Days ❄️", page_icon="❄️", layout="wide")
 
-st.title("❄️ Frost-Days — Jours de gel par commune")
-st.caption(
-    "Données : Météo-France (climatologie quotidienne, data.gouv.fr). "
-    "Un jour de gel = température minimale TN < 0 °C."
+# --- Palette « givre / dark mode » partagée entre CSS, Plotly et folium --------
+ACCENT = "#4cc9f0"
+ACCENT_2 = "#38bdf8"
+BG = "#0e1117"
+CARD_BG = "#1a1f2e"
+BORDER = "#2a3142"
+TEXT = "#e6edf3"
+COLORWAY = ["#4cc9f0", "#38bdf8", "#3b82f6", "#818cf8", "#22d3ee"]
+
+CUSTOM_CSS = f"""
+<style>
+/* --- Keyframes : dégradé animé, apparition, neige -------------------------- */
+@keyframes gradientShift {{
+    0% {{ background-position: 0% 50%; }}
+    50% {{ background-position: 100% 50%; }}
+    100% {{ background-position: 0% 50%; }}
+}}
+@keyframes fadeUp {{
+    from {{ opacity: 0; transform: translateY(14px); }}
+    to {{ opacity: 1; transform: translateY(0); }}
+}}
+@keyframes floatSnow {{
+    0%   {{ transform: translate(0, -10vh) translateX(0); opacity: 0; }}
+    10%  {{ opacity: .85; }}
+    90%  {{ opacity: .6; }}
+    100% {{ transform: translate(0, 110vh) translateX(20px); opacity: 0; }}
+}}
+
+/* Le contenu applicatif passe au-dessus de la neige */
+.block-container {{
+    padding-top: 1.2rem;
+    position: relative;
+    z-index: 1;
+}}
+
+/* Neige : conteneur plein écran, ne capte aucun clic */
+.snow-layer {{
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+}}
+.snow-layer .flake {{
+    position: absolute;
+    top: -10px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle, {ACCENT} 0%, rgba(76,201,240,0) 70%);
+    animation-name: floatSnow;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+}}
+
+/* --- Hero ------------------------------------------------------------------ */
+.hero {{
+    background: linear-gradient(135deg, {BG} 0%, {CARD_BG} 100%);
+    border: 1px solid {BORDER};
+    border-radius: 16px;
+    padding: 1.6rem 2rem;
+    margin-bottom: 1.4rem;
+    animation: fadeUp .6s ease both;
+}}
+.hero h1 {{
+    margin: 0;
+    font-size: 2.1rem;
+    font-weight: 800;
+    background: linear-gradient(90deg, {ACCENT} 0%, {ACCENT_2} 50%, #818cf8 100%, {ACCENT} 150%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: gradientShift 6s ease infinite;
+}}
+.hero p {{
+    margin: .4rem 0 0;
+    color: #9aa7b8;
+    font-size: .95rem;
+}}
+
+/* --- Apparition en cascade des sections ------------------------------------ */
+[data-testid="stMetric"],
+[data-testid="stPlotlyChart"],
+[data-testid="stDataFrame"],
+.kpi-card,
+.info-card,
+h2, h3 {{
+    animation: fadeUp .5s ease both;
+}}
+
+/* --- Cartes métriques (st.metric) ------------------------------------------ */
+[data-testid="stMetric"] {{
+    background: {CARD_BG};
+    border: 1px solid {BORDER};
+    border-radius: 12px;
+    padding: 1rem 1.2rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+    transition: transform .2s ease, box-shadow .2s ease;
+}}
+[data-testid="stMetric"]:hover {{
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(76, 201, 240, .18);
+}}
+[data-testid="stMetricValue"] {{
+    color: {ACCENT};
+}}
+
+/* --- Hover-lift sur graphes et tableaux ------------------------------------ */
+[data-testid="stPlotlyChart"], [data-testid="stDataFrame"] {{
+    border-radius: 10px;
+    border: 1px solid {BORDER};
+    transition: transform .2s ease, box-shadow .2s ease;
+}}
+[data-testid="stPlotlyChart"]:hover, [data-testid="stDataFrame"]:hover {{
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(76, 201, 240, .14);
+}}
+
+/* --- Cartes KPI / info custom (HTML injecté) ------------------------------- */
+.kpi-row {{
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}}
+.kpi-card {{
+    flex: 1;
+    background: {CARD_BG};
+    border: 1px solid {BORDER};
+    border-radius: 12px;
+    padding: 1rem 1.2rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+    transition: transform .2s ease, box-shadow .2s ease;
+}}
+.kpi-card:hover {{
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(76, 201, 240, .18);
+}}
+.kpi-card .kpi-label {{
+    color: #9aa7b8;
+    font-size: .85rem;
+    margin-bottom: .3rem;
+}}
+.kpi-card .kpi-value {{
+    color: {ACCENT};
+    font-size: 1.8rem;
+    font-weight: 700;
+}}
+.info-card {{
+    background: {CARD_BG};
+    border: 1px solid {BORDER};
+    border-left: 4px solid {ACCENT};
+    border-radius: 10px;
+    padding: .8rem 1.1rem;
+    margin-bottom: 1rem;
+    color: {TEXT};
+}}
+
+/* --- Onglets ---------------------------------------------------------------- */
+[data-testid="stTabs"] button[data-baseweb="tab"] {{
+    color: {TEXT};
+}}
+[data-testid="stTabs"] button[aria-selected="true"] {{
+    color: {ACCENT};
+    border-bottom-color: {ACCENT} !important;
+}}
+
+/* --- Sidebar ----------------------------------------------------------------- */
+[data-testid="stSidebar"] {{
+    background: {CARD_BG};
+    border-right: 1px solid {BORDER};
+}}
+
+/* --- Boutons primaires -------------------------------------------------------- */
+button[kind="primary"] {{
+    background: linear-gradient(90deg, {ACCENT} 0%, {ACCENT_2} 100%);
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    transition: filter 0.15s ease-in-out, transform .15s ease;
+}}
+button[kind="primary"]:hover {{
+    filter: brightness(1.15);
+    transform: translateY(-2px);
+}}
+</style>
+"""
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+
+def _snow_html(n: int = 35) -> str:
+    """Génère quelques flocons CSS discrets qui tombent en fond de page."""
+    import random
+
+    flakes = []
+    for _ in range(n):
+        left = random.uniform(0, 100)
+        size = random.uniform(3, 7)
+        duration = random.uniform(8, 18)
+        delay = random.uniform(-15, 0)
+        opacity = random.uniform(0.3, 0.8)
+        flakes.append(
+            f'<span class="flake" style="left:{left}vw; width:{size}px; height:{size}px; '
+            f"animation-duration:{duration}s; animation-delay:{delay}s; "
+            f'opacity:{opacity};"></span>'
+        )
+    return f'<div class="snow-layer">{"".join(flakes)}</div>'
+
+
+# Neige injectée une seule fois, en tout début de page.
+st.markdown(_snow_html(), unsafe_allow_html=True)
+
+
+def _style_fig(fig):
+    """Applique le thème sombre/givre partagé à une figure Plotly."""
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        colorway=COLORWAY,
+        font=dict(color=TEXT),
+        margin=dict(l=40, r=20, t=40, b=40),
+        legend=dict(bgcolor="rgba(0,0,0,0)"),
+    )
+    fig.update_xaxes(gridcolor=BORDER, zerolinecolor=BORDER)
+    fig.update_yaxes(gridcolor=BORDER, zerolinecolor=BORDER)
+    fig.update_layout(transition_duration=400)
+    return fig
+
+
+def _kpi_row(items: list[tuple[str, str, float]], height: int = 130) -> None:
+    """Affiche une rangée de cartes KPI avec valeurs animées (0 -> cible).
+
+    `items` est une liste de (label, texte_affiché, valeur_numérique_cible).
+    """
+    cards = "".join(
+        f'<div class="kpi-card"><div class="kpi-label">{label}</div>'
+        f'<div class="kpi-value" data-target="{target}" data-suffix="{suffix}">0</div></div>'
+        for label, suffix, target in items
+    )
+    script = """
+    <script>
+    const cards = window.parent.document.querySelectorAll('.kpi-value[data-target]');
+    cards.forEach((el) => {
+        if (el.dataset.animated) return;
+        el.dataset.animated = "1";
+        const target = parseFloat(el.dataset.target);
+        const suffix = el.dataset.suffix || "";
+        const duration = 900;
+        const start = performance.now();
+        function step(now) {
+            const progress = Math.min((now - start) / duration, 1);
+            const eased = 1 - Math.pow(1 - progress, 3);
+            const value = target * eased;
+            el.textContent = (Number.isInteger(target) ? Math.round(value) : value.toFixed(1)) + suffix;
+            if (progress < 1) requestAnimationFrame(step);
+        }
+        requestAnimationFrame(step);
+    });
+    </script>
+    """
+    st.markdown(f'<div class="kpi-row">{cards}</div>', unsafe_allow_html=True)
+    st_html(script, height=0)
+
+
+# --- Hero -------------------------------------------------------------------
+st.markdown(
+    """
+    <div class="hero">
+        <h1>❄️ Frost-Days — Jours de gel par commune</h1>
+        <p>Données : Météo-France (climatologie quotidienne, data.gouv.fr).
+        Un jour de gel = température minimale TN &lt; 0 °C.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 
@@ -51,22 +322,28 @@ def _run(commune: str, departement: str, debut: dt.date, fin: dt.date, method: s
 
 
 with st.sidebar:
-    st.header("Paramètres")
-    commune = st.text_input("Commune", value="Paris")
-    departement = st.text_input("Département", value="75")
-    col_a, col_b = st.columns(2)
-    debut = col_a.date_input(
+    st.header("Navigation")
+    page = st.radio(
+        "Mode",
+        ["❄️ Commune unique", "🗺️ Plusieurs communes"],
+        label_visibility="collapsed",
+    )
+
+if page == "❄️ Commune unique":
+    st.subheader("Paramètres — commune unique")
+    p1, p2 = st.columns(2)
+    commune = p1.text_input("Commune", value="Paris")
+    departement = p2.text_input("Département", value="75")
+    p3, p4, p5 = st.columns([1, 1, 1])
+    debut = p3.date_input(
         "Début", value=dt.date(2014, 1, 1), min_value=dt.date(1950, 1, 1)
     )
-    fin = col_b.date_input(
+    fin = p4.date_input(
         "Fin", value=dt.date(2023, 12, 31), min_value=dt.date(1950, 1, 1)
     )
-    method = st.selectbox("Méthode de distance", ["haversine", "kdtree"], index=0)
+    method = p5.selectbox("Méthode de distance", ["haversine", "kdtree"], index=0)
     go = st.button("Calculer", type="primary", use_container_width=True)
 
-tab1, tab2 = st.tabs(["Commune unique", "Plusieurs communes"])
-
-with tab1:
     if go:
         if fin < debut:
             st.error("La date de fin doit être postérieure à la date de début.")
@@ -79,25 +356,27 @@ with tab1:
             st.error(str(exc))
             st.stop()
 
-        st.success(
-            f"Station retenue : **{res['station_name']}** (#{res['station_id']}) — "
-            f"{res['distance_km']:.1f} km, {res['missing_ratio']:.0%} de valeurs manquantes."
+        st.markdown(
+            f'<div class="info-card">📍 Station retenue : <strong>{res["station_name"]}</strong> '
+            f'(#{res["station_id"]}) — {res["distance_km"]:.1f} km, '
+            f'{res["missing_ratio"]:.0%} de valeurs manquantes.</div>',
+            unsafe_allow_html=True,
         )
 
-        c1, c2 = st.columns(2)
-        c1.metric("Jours de gel (total)", res["total"])
-        c2.metric("Jours de gel (moyenne / an)", f"{res['avg']:.1f}")
+        _kpi_row(
+            [
+                ("Jours de gel (total)", "", float(res["total"])),
+                ("Jours de gel (moyenne / an)", "", round(float(res["avg"]), 1)),
+                ("Distance à la station", " km", round(float(res["distance_km"]), 1)),
+            ]
+        )
 
-        # --- Jours de gel par année -------------------------------------------------
-        st.subheader("Jours de gel par année")
+        # --- Jours de gel par année & saisonnalité — côte à côte -------------------
         per_year = res["per_year"].rename(columns={"year": "Année", "TN": "Jours de gel"})
         per_year.columns = ["Année", "Jours de gel"]
         fig_year = px.bar(per_year, x="Année", y="Jours de gel", text="Jours de gel")
-        fig_year.update_traces(textposition="outside")
-        st.plotly_chart(fig_year, use_container_width=True)
+        fig_year.update_traces(textposition="outside", marker_color=ACCENT)
 
-        # --- Saisonnalité par jour de l'année --------------------------------------
-        st.subheader("Fréquence de gel par jour de l'année (hors 29 février)")
         per_day = res["per_day"].rename(
             columns={
                 "mmdd": "Jour",
@@ -116,7 +395,15 @@ with tab1:
         )
         fig_day.update_yaxes(tickformat=".0%", title="Fréquence de gel")
         fig_day.update_xaxes(dtick="M1", tickformat="%b", title="Mois")
-        st.plotly_chart(fig_day, use_container_width=True)
+        fig_day.update_traces(line_color=ACCENT_2)
+
+        g1, g2 = st.columns(2)
+        with g1:
+            st.subheader("Jours de gel par année")
+            st.plotly_chart(_style_fig(fig_year), use_container_width=True)
+        with g2:
+            st.subheader("Fréquence de gel par jour (hors 29 fév.)")
+            st.plotly_chart(_style_fig(fig_day), use_container_width=True)
 
         # --- Tableau détaillé -------------------------------------------------------
         st.subheader("Détail par jour de l'année")
@@ -149,10 +436,14 @@ with tab1:
                     st_lat = float(row[config.COL_LAT])
                     st_lon = float(row[config.COL_LON])
 
-                m = folium.Map(location=[lat_commune, lon_commune], zoom_start=10)
+                m = folium.Map(
+                    location=[lat_commune, lon_commune],
+                    zoom_start=10,
+                    tiles="CartoDB positron",
+                )
                 folium.Marker(
                     [lat_commune, lon_commune], popup=f"Commune: {commune}",
-                    icon=folium.Icon(color="blue"), tooltip=commune
+                    icon=folium.Icon(color="cadetblue"), tooltip=commune
                 ).add_to(m)
                 folium.Marker(
                     [st_lat, st_lon], popup=f"Station: {res['station_name']}",
@@ -167,12 +458,23 @@ with tab1:
     else:
         st.info("Renseignez une commune, un département et une plage de dates, puis cliquez sur **Calculer**.")
 
-with tab2:
+elif page == "🗺️ Plusieurs communes":
+    st.subheader("Paramètres — plusieurs communes")
     multi_communes = st.text_area(
         "Liste de communes (une par ligne, format: Commune,Département)",
         value="",
         placeholder="Exemple:\nParis,75\nLille,59\nBrest,29",
         help="Saisissez une ligne par commune avec son département (numéro ou code).",
+    )
+    d1, d2, d3 = st.columns([1, 1, 1])
+    debut = d1.date_input(
+        "Début", value=dt.date(2014, 1, 1), min_value=dt.date(1950, 1, 1), key="multi_debut"
+    )
+    fin = d2.date_input(
+        "Fin", value=dt.date(2023, 12, 31), min_value=dt.date(1950, 1, 1), key="multi_fin"
+    )
+    method = d3.selectbox(
+        "Méthode de distance", ["haversine", "kdtree"], index=0, key="multi_method"
     )
     multi_go = st.button("Afficher plusieurs sur la carte", use_container_width=True)
 
@@ -252,6 +554,22 @@ with tab2:
                         st.warning(e)
 
                 if points:
+                    st.markdown(
+                        f'<div class="info-card">📊 {len(points)} commune(s) analysée(s) '
+                        f"avec succès"
+                        f"{f' — {len(errors)} erreur(s)' if errors else ''}.</div>",
+                        unsafe_allow_html=True,
+                    )
+                    avg_total = sum(p.get("total") or 0 for p in points) / len(points)
+                    max_total = max((p.get("total") or 0 for p in points), default=0)
+                    _kpi_row(
+                        [
+                            ("Communes analysées", "", float(len(points))),
+                            ("Moyenne jours de gel (total)", "", round(avg_total, 1)),
+                            ("Maximum jours de gel (total)", "", float(max_total)),
+                        ]
+                    )
+
                     # --- Graphiques comparatifs ---------------------------------
                     try:
                         totals_df = pd.DataFrame(
@@ -262,8 +580,8 @@ with tab2:
                         )
                         st.subheader("Comparaison entre communes")
                         fig_tot = px.bar(totals_df, x="Commune", y="Total", text="Total")
-                        fig_tot.update_traces(textposition="outside")
-                        st.plotly_chart(fig_tot, use_container_width=True)
+                        fig_tot.update_traces(textposition="outside", marker_color=ACCENT)
+                        st.plotly_chart(_style_fig(fig_tot), use_container_width=True)
 
                         # Série temporelle par année pour chaque commune
                         frames = []
@@ -295,20 +613,24 @@ with tab2:
                             df_year = pd.concat(frames, ignore_index=True)
                             fig_comp = px.line(df_year, x="Année", y="Jours de gel", color="Commune", markers=True)
                             st.subheader("Évolution annuelle des jours de gel — comparaison")
-                            st.plotly_chart(fig_comp, use_container_width=True)
+                            st.plotly_chart(_style_fig(fig_comp), use_container_width=True)
                     except Exception as exc:  # pragma: no cover - best-effort UI feature
                         st.warning(f"Impossible de tracer les graphiques comparatifs: {exc}")
 
                     # Centrer la carte sur la moyenne des communes
                     avg_lat = sum(p["commune_lat"] for p in points) / len(points)
                     avg_lon = sum(p["commune_lon"] for p in points) / len(points)
-                    m = folium.Map(location=[avg_lat, avg_lon], zoom_start=6)
+                    m = folium.Map(
+                        location=[avg_lat, avg_lon],
+                        zoom_start=6,
+                        tiles="CartoDB positron",
+                    )
 
                     for p in points:
                         folium.Marker(
                             [p["commune_lat"], p["commune_lon"]],
                             popup=f"Commune: {p['commune']} ({p['departement']})",
-                            icon=folium.Icon(color="blue"),
+                            icon=folium.Icon(color="cadetblue"),
                             tooltip=p["commune"],
                         ).add_to(m)
                         folium.Marker(
